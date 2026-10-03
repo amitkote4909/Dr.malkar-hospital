@@ -1,0 +1,6 @@
+{
+  "name": "Dr. Malkar Hospital",
+  "description": "Comprehensive healthcare platform for Dr. Malkar Hospital featuring doctor appointments, patient portal, medical departments, and real-time medical updates.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
