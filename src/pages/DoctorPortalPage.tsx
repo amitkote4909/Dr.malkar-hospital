@@ -248,6 +248,14 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
     }
   };
 
+  const isDoctor = 
+    profile?.role === 'doctor' || 
+    profile?.role === 'admin' || 
+    user?.email?.toLowerCase() === 'koteamit651@gmail.com' ||
+    user?.email?.toLowerCase() === 'koteamit615@gmail.com' ||
+    profile?.username === 'amitkote4909' ||
+    profile?.username === 'amitkotepatil4909';
+
   const filteredAppointments = appointments.filter((item) => {
     const matchesSearch = 
       item.patientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -257,6 +265,33 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
     const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  if (!isDoctor) {
+    return (
+      <div className="bg-slate-50 min-h-[85vh] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-3xl p-8 sm:p-10 border border-slate-200 shadow-xl text-center space-y-5">
+          <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto text-3xl font-black shadow-inner">
+            🔒
+          </div>
+          <div>
+            <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              Doctor Access Restricted
+            </h2>
+            <p className="text-slate-600 text-xs sm:text-sm mt-2 leading-relaxed">
+              This clinical portal is strictly restricted to authorized medical personnel. Please log in with your verified doctor username, email, and security password to view patient records and manage OPD schedules.
+            </p>
+          </div>
+          <button
+            onClick={() => setCurrentTab('login')}
+            className="w-full py-3.5 bg-sky-700 hover:bg-sky-800 text-white font-bold text-sm rounded-xl shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Stethoscope className="w-4 h-4" />
+            <span>Go to Doctor Login</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-slate-50 min-h-screen pb-24">
@@ -273,8 +308,8 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
                 <span className="bg-emerald-500 text-white text-xs font-black uppercase tracking-wider px-3 py-0.5 rounded-full inline-flex items-center gap-1 shadow-xs">
                   <ShieldCheck className="w-3.5 h-3.5" /> Authorized Doctor Portal
                 </span>
-                <span className="bg-white/15 text-sky-200 text-xs font-mono px-2 py-0.5 rounded-md">
-                  Username: {DOCTOR_AUTHORIZED_CREDENTIALS.username}
+                <span className="bg-white/15 text-sky-200 text-xs px-2 py-0.5 rounded-md font-semibold">
+                  OPD Administrator
                 </span>
                 <span className="text-xs text-emerald-300 font-semibold flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>

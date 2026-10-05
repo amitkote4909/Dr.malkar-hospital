@@ -25,7 +25,9 @@ function AppContent() {
   const isDoctor = 
     profile?.role === 'doctor' || 
     profile?.role === 'admin' || 
+    user?.email?.toLowerCase() === 'koteamit651@gmail.com' ||
     user?.email?.toLowerCase() === 'koteamit615@gmail.com' ||
+    profile?.username === 'amitkote4909' ||
     profile?.username === 'amitkotepatil4909';
 
   // Sync with browser hash if present (e.g. #appointment, #about, #doctor-portal, #patient-portal, etc.)
@@ -135,7 +137,11 @@ function AppContent() {
 
         {/* Dedicated Doctor Portal */}
         {currentTab === 'doctor-portal' && (
-          <DoctorPortalPage setCurrentTab={handleSetTab} />
+          isDoctor ? (
+            <DoctorPortalPage setCurrentTab={handleSetTab} />
+          ) : (
+            <LoginPage setCurrentTab={handleSetTab} initialSection="doctor" />
+          )
         )}
 
         {/* Dedicated Patient Portal */}

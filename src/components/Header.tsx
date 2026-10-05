@@ -16,7 +16,9 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab }) => 
   const isDoctor = 
     profile?.role === 'doctor' || 
     profile?.role === 'admin' || 
+    user?.email?.toLowerCase() === 'koteamit651@gmail.com' ||
     user?.email?.toLowerCase() === 'koteamit615@gmail.com' ||
+    profile?.username === 'amitkote4909' ||
     profile?.username === 'amitkotepatil4909';
 
   const userPortalTarget = isDoctor ? 'doctor-portal' : 'patient-portal';

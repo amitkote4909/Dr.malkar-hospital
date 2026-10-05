@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuth, DOCTOR_AUTHORIZED_CREDENTIALS } from '../firebase/authContext';
+import { useAuth } from '../firebase/authContext';
 import { 
   Mail, 
   Lock, 
@@ -9,19 +9,19 @@ import {
   Stethoscope, 
   User, 
   KeyRound, 
-  CheckCircle2,
-  Sparkles
+  CheckCircle2
 } from 'lucide-react';
 
 interface LoginPageProps {
   setCurrentTab: (tab: string) => void;
+  initialSection?: 'patient' | 'doctor';
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentTab }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentTab, initialSection = 'patient' }) => {
   const { signIn, signInDoctor, signInWithGoogle } = useAuth();
   
   // Section toggle: 'patient' | 'doctor'
-  const [activeSection, setActiveSection] = useState<'patient' | 'doctor'>('patient');
+  const [activeSection, setActiveSection] = useState<'patient' | 'doctor'>(initialSection);
 
   // Patient Login State
   const [patientEmail, setPatientEmail] = useState('');
@@ -91,14 +91,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentTab }) => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Helper button to pre-fill doctor credentials for testing
-  const handleFillDoctorCredentials = () => {
-    setDoctorUsername(DOCTOR_AUTHORIZED_CREDENTIALS.username);
-    setDoctorEmail(DOCTOR_AUTHORIZED_CREDENTIALS.email);
-    setDoctorPassword(DOCTOR_AUTHORIZED_CREDENTIALS.password);
-    setError('');
   };
 
   const handleGoogleLogin = async () => {
@@ -343,7 +335,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentTab }) => {
                       type="text"
                       value={doctorUsername}
                       onChange={(e) => setDoctorUsername(e.target.value)}
+                      placeholder="Enter doctor username"
                       required
+                      autoComplete="username"
                       className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 text-sm outline-hidden font-mono bg-white"
                     />
                     <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -360,7 +354,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentTab }) => {
                       type="email"
                       value={doctorEmail}
                       onChange={(e) => setDoctorEmail(e.target.value)}
+                      placeholder="Enter registered doctor email"
                       required
+                      autoComplete="email"
                       className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 text-sm outline-hidden font-mono bg-white"
                     />
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -377,39 +373,31 @@ export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentTab }) => {
                       type="password"
                       value={doctorPassword}
                       onChange={(e) => setDoctorPassword(e.target.value)}
+                      placeholder="••••••••••••"
                       required
+                      autoComplete="current-password"
                       className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 text-sm outline-hidden bg-white"
                     />
                     <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                   </div>
                 </div>
 
-                {/* 1-click test button */}
-                <div className="pt-1">
+                <div className="pt-2">
                   <button
-                    type="button"
-                    onClick={handleFillDoctorCredentials}
-                    className="w-full py-2.5 px-3 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-amber-300"
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full py-3.5 bg-sky-700 hover:bg-sky-800 text-white font-bold text-sm rounded-xl shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                    <span>⚡ Quick-Fill Doctor Credentials</span>
+                    {isLoading ? (
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <>
+                        <Stethoscope className="w-4 h-4" />
+                        <span>Verify Credentials & Enter Doctor Portal</span>
+                      </>
+                    )}
                   </button>
                 </div>
-
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full py-3.5 bg-sky-700 hover:bg-sky-800 text-white font-bold text-sm rounded-xl shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
-                >
-                  {isLoading ? (
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  ) : (
-                    <>
-                      <Stethoscope className="w-4 h-4" />
-                      <span>Verify Credentials & Enter Doctor Portal</span>
-                    </>
-                  )}
-                </button>
               </form>
             </div>
           )}

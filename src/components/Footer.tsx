@@ -183,14 +183,21 @@ export const Footer: React.FC<FooterProps> = ({ setCurrentTab }) => {
           <p>
             © 2026 Dr. Malkar Hospital. All Rights Reserved.
           </p>
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-6">
+            <a 
+              href="/dr-malkar-hospital-source.zip" 
+              download="dr-malkar-hospital-source.zip"
+              className="px-3 py-1 bg-sky-600/30 hover:bg-sky-600/50 text-sky-300 hover:text-white rounded-lg border border-sky-500/40 font-bold flex items-center gap-1.5 transition-all"
+            >
+              <span>⬇️ Download Source Code (.ZIP)</span>
+            </a>
             <a href="#privacy" className="hover:text-slate-300 transition-colors">
               Privacy Policy
             </a>
             <a href="#terms" className="hover:text-slate-300 transition-colors">
               Terms & Conditions
             </a>
-            <button onClick={() => handleNav('contact')} className="hover:text-slate-300 transition-colors">
+            <button onClick={() => handleNav('contact')} className="hover:text-slate-300 transition-colors cursor-pointer">
               Patient Helpdesk
             </button>
           </div>

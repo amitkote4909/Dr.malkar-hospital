@@ -22,8 +22,8 @@ import { auth, db, googleProvider } from './config';
 
 // Strict authorized doctor credentials defined by hospital admin
 export const DOCTOR_AUTHORIZED_CREDENTIALS = {
-  username: 'amitkotepatil4909',
-  email: 'koteamit615@gmail.com',
+  username: 'amitkote4909',
+  email: 'koteamit651@gmail.com',
   password: 'I@mit4909',
   name: 'Dr. Vaibhav G. Malkar (Consulting Physician & Medical Director)',
 };
@@ -318,12 +318,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanEmail = emailInput.trim().toLowerCase();
     const cleanPass = passwordInput.trim();
 
-    // Verify against exact authorized doctor credentials
-    if (
-      cleanUser !== DOCTOR_AUTHORIZED_CREDENTIALS.username ||
-      cleanEmail !== DOCTOR_AUTHORIZED_CREDENTIALS.email.toLowerCase() ||
-      cleanPass !== DOCTOR_AUTHORIZED_CREDENTIALS.password
-    ) {
+    // Verify against authorized doctor credentials
+    const isAuthorizedUsername = 
+      cleanUser === 'amitkote4909' || cleanUser === 'amitkotepatil4909';
+    const isAuthorizedEmail = 
+      cleanEmail === 'koteamit651@gmail.com' || cleanEmail === 'koteamit615@gmail.com';
+    const isAuthorizedPassword = 
+      cleanPass === 'I@mit4909';
+
+    if (!isAuthorizedUsername || !isAuthorizedEmail || !isAuthorizedPassword) {
       throw new Error(
         'Access Denied: Invalid doctor credentials. You must provide the exact authorized Doctor Username, Email, and Password.'
       );
