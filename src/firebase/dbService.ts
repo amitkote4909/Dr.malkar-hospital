@@ -1,6 +1,7 @@
 import { 
   collection, 
   doc, 
+  getDoc,
   addDoc, 
   setDoc,
   deleteDoc, 
@@ -47,6 +48,8 @@ export interface PaymentDetails {
   consultationFee: number;
   medicineCharges?: number;
   totalAmount: number;
+  feeLocked?: boolean; // Once decided by doctor, no one can change the fee
+  feePrescribedBy?: string;
   paymentOption?: 'online_upi' | 'in_hospital' | 'emi';
   paymentStatus: 'pending' | 'paid' | 'pay_at_clinic' | 'emi_processing';
   paymentMethod?: string;
@@ -108,12 +111,12 @@ export const bookAppointment = async (
   const colRef = collection(db, APPOINTMENTS_COLLECTION);
   const docRef = await addDoc(colRef, {
     ...data,
-    status: 'pending', // Starts as pending until doctor assigns time slot
-    payment: {
-      consultationFee: 400,
-      totalAmount: 400,
+    status: 'pending', // Starts as pending until doctor assigns time slot and decides fee
+    payment: data.payment || {
+      consultationFee: 0,
+      totalAmount: 0,
       paymentStatus: 'pending',
-      paymentMethod: 'Cash at Counter',
+      paymentMethod: 'Awaiting Doctor Review',
       invoiceNumber: `INV-${Date.now().toString().slice(-6)}`,
     },
     // Seed default baseline report for realistic hospital history
@@ -198,7 +201,7 @@ export const subscribeToAllAppointments = (
   });
 };
 
-// Doctor power: approve pending appointment and assign exact time slot
+// Doctor power: approve pending appointment and assign exact time slot & decide consultation fee
 export const doctorApproveAndSetAppointmentTime = async (
   appointmentId: string,
   approvalData: {
@@ -212,8 +215,20 @@ export const doctorApproveAndSetAppointmentTime = async (
   }
 ) => {
   const docRef = doc(db, APPOINTMENTS_COLLECTION, appointmentId);
-  const fee = approvalData.consultationFee ?? 400;
-  const payStatus = approvalData.paymentStatus || 'pay_at_clinic';
+  const snap = await getDoc(docRef);
+  const existingData = snap.exists() ? (snap.data() as AppointmentRecord) : null;
+
+  // Once doctor decides the fee, NO ONE CAN CHANGE IT (permanently locked)
+  const isAlreadyLocked = Boolean(existingData?.payment?.feeLocked);
+  const finalFee = isAlreadyLocked && existingData?.payment?.consultationFee !== undefined
+    ? Number(existingData.payment.consultationFee)
+    : (approvalData.consultationFee ?? 400);
+
+  const existingPayment = existingData?.payment || {
+    consultationFee: finalFee,
+    totalAmount: finalFee,
+    paymentStatus: 'pending',
+  };
 
   const updatePayload: Record<string, unknown> = {
     status: 'confirmed',
@@ -223,10 +238,13 @@ export const doctorApproveAndSetAppointmentTime = async (
     preparationInstructions: approvalData.preparationInstructions || 'Please arrive 15 minutes before your allotted time.',
     doctorNotes: approvalData.doctorNotes || '',
     payment: {
-      consultationFee: fee,
-      totalAmount: fee,
-      paymentStatus: payStatus,
-      paidAt: payStatus === 'paid' ? new Date().toLocaleString() : null,
+      ...existingPayment,
+      consultationFee: finalFee,
+      totalAmount: finalFee,
+      feeLocked: true, // Permanent lock! Once doctor decides the fee, no one can change it.
+      // If patient already submitted payment, preserve their payment details; otherwise keep pending without fake details
+      paymentStatus: existingPayment.paymentStatus || 'pending',
+      invoiceNumber: existingPayment.invoiceNumber || `INV-${Date.now().toString().slice(-6)}`,
     },
     updatedAt: serverTimestamp(),
   };
@@ -259,14 +277,46 @@ export const doctorAddPatientReport = async (
   }, { merge: true });
 };
 
-// Doctor power: update payment details
+// Doctor power: update payment details (e.g. mark collected at counter)
 export const doctorUpdatePayment = async (
   appointmentId: string,
   payment: PaymentDetails
 ) => {
   const docRef = doc(db, APPOINTMENTS_COLLECTION, appointmentId);
+  const snap = await getDoc(docRef);
+  const existingData = snap.exists() ? (snap.data() as AppointmentRecord) : null;
+  // Ensure locked fee decided by doctor cannot be changed
+  const lockedFee = existingData?.payment?.consultationFee ?? payment.consultationFee;
+
   await setDoc(docRef, {
-    payment,
+    payment: {
+      ...payment,
+      consultationFee: lockedFee,
+      totalAmount: lockedFee,
+      feeLocked: true,
+    },
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+};
+
+// Patient power: submit payment (Online UPI, Counter, or EMI) after doctor approves and sets fee
+export const patientSubmitPayment = async (
+  appointmentId: string,
+  payment: PaymentDetails
+) => {
+  const docRef = doc(db, APPOINTMENTS_COLLECTION, appointmentId);
+  const snap = await getDoc(docRef);
+  const existingData = snap.exists() ? (snap.data() as AppointmentRecord) : null;
+  // Consultation fee decided by doctor CANNOT be changed by patient
+  const lockedFee = existingData?.payment?.consultationFee ?? payment.consultationFee;
+
+  await setDoc(docRef, {
+    payment: {
+      ...payment,
+      consultationFee: lockedFee,
+      totalAmount: lockedFee,
+      feeLocked: true, // Remains permanently locked!
+    },
     updatedAt: serverTimestamp(),
   }, { merge: true });
 };

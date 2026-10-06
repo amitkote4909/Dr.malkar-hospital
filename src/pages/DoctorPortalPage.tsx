@@ -73,7 +73,8 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
   const [prepInstructionsInput, setPrepInstructionsInput] = useState('Please arrive 15 minutes prior. Bring past prescription and test reports.');
   const [doctorApprovalNotes, setDoctorApprovalNotes] = useState('');
   const [consultationFeeInput, setConsultationFeeInput] = useState(400);
-  const [paymentStatusInput, setPaymentStatusInput] = useState<'pending' | 'paid' | 'pay_at_clinic' | 'emi_processing'>('pay_at_clinic');
+  const [paymentStatusInput, setPaymentStatusInput] = useState<'pending' | 'paid' | 'pay_at_clinic' | 'emi_processing'>('pending');
+  const [isFeeLockedModal, setIsFeeLockedModal] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
 
   // Full Patient File Modal
@@ -133,8 +134,12 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
       appt.preparationInstructions || 'Please arrive 15 minutes before your scheduled slot. Bring past prescription sheets.'
     );
     setDoctorApprovalNotes(appt.doctorNotes || '');
+
+    // Once doctor decides the fee, it is locked and cannot be changed by anyone
+    const alreadyDecided = Boolean(appt.payment?.feeLocked) || (appt.status === 'confirmed' && (appt.payment?.consultationFee || 0) > 0);
+    setIsFeeLockedModal(alreadyDecided);
     setConsultationFeeInput(appt.payment?.consultationFee || 400);
-    setPaymentStatusInput(appt.payment?.paymentStatus || 'pay_at_clinic');
+    setPaymentStatusInput('pending');
   };
 
   // Submit Allocated Time Slot & Confirmation
@@ -144,18 +149,22 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
 
     setIsApproving(true);
     try {
+      const finalFee = isFeeLockedModal 
+        ? (timeSlotModalAppt.payment?.consultationFee || Number(consultationFeeInput) || 400)
+        : (Number(consultationFeeInput) || 400);
+
       await doctorApproveAndSetAppointmentTime(timeSlotModalAppt.id, {
         assignedTime: assignedTimeInput.trim(),
         tokenNumber: tokenInput.trim(),
         roomNumber: roomInput.trim(),
         preparationInstructions: prepInstructionsInput.trim(),
         doctorNotes: doctorApprovalNotes.trim(),
-        consultationFee: Number(consultationFeeInput) || 400,
-        paymentStatus: paymentStatusInput,
+        consultationFee: finalFee,
+        paymentStatus: 'pending',
       });
 
       setNotification({
-        message: `Appointment approved! Time slot ${assignedTimeInput} assigned to ${timeSlotModalAppt.patientName}. Patient has been notified.`,
+        message: `Appointment confirmed! Time slot ${assignedTimeInput} and fee of ₹${finalFee} locked for ${timeSlotModalAppt.patientName}. Patient has been notified to complete payment in their portal.`,
         type: 'success',
       });
       setTimeSlotModalAppt(null);
@@ -579,6 +588,7 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
                 const isConfirmed = appt.status === 'confirmed';
                 const isCompleted = appt.status === 'completed';
                 const isCancelled = appt.status === 'cancelled';
+                const hasPatientPaidOrSelected = Boolean(appt.payment?.paymentOption);
 
                 return (
                   <div
@@ -700,133 +710,186 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
                           </p>
                         )}
 
-                        {/* DETAILED PATIENT PAYMENT DETAILS BOX (All fields filled by patient) */}
-                        <div className="mt-3 p-4 rounded-2xl border text-xs space-y-2.5 bg-slate-50/95 border-slate-200">
-                          
-                          {/* Header: Status Banner & Amount */}
-                          <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200">
-                            <div className="flex items-center gap-2">
-                              <span className="font-extrabold uppercase text-[10px] tracking-wider text-slate-500">
-                                Patient Payment Status:
+                        {/* CLINICAL STATUS / PAYMENT SECTION BASED ON PATIENT PAYMENT STATE */}
+                        
+                        {/* STATE 1: PENDING - Doctor has not decided fee or assigned slot yet */}
+                        {isPending && (
+                          <div className="mt-3 p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                            <div className="flex items-center gap-2 text-amber-900">
+                              <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                              <div>
+                                <span className="font-bold">Consultation Fee & Slot Allocation Required</span>
+                                <p className="text-[11px] text-amber-800">
+                                  Click &ldquo;Allocate Slot &amp; Prescribe Fee&rdquo; to set appointment time and decide consultation fee.
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-[11px] font-bold text-amber-900 bg-amber-100 px-3 py-1 rounded-full border border-amber-300 self-start sm:self-auto shrink-0">
+                              Awaiting Doctor Decision
+                            </span>
+                          </div>
+                        )}
+
+                        {/* STATE 2: CONFIRMED BUT PATIENT HAS NOT PAID YET - Doctor decided fee (locked), but patient hasn't submitted payment */}
+                        {!isPending && !hasPatientPaidOrSelected && (
+                          <div className="mt-3 p-4 rounded-2xl bg-sky-50/70 border border-sky-200 text-xs space-y-2.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-sky-200/80">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                  Doctor Prescribed Fee:
+                                </span>
+                                <span className="text-sm font-black text-sky-900 bg-white px-3 py-1 rounded-lg border border-sky-200 shadow-2xs">
+                                  🔒 ₹{appt.payment?.consultationFee || 400}.00 (Permanently Locked)
+                                </span>
+                              </div>
+                              <span className="px-2.5 py-1 rounded-full font-bold text-[11px] bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1">
+                                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                Awaiting Patient Payment in Portal
                               </span>
-                              <span className={`px-2.5 py-1 rounded-full font-black text-xs inline-flex items-center gap-1.5 ${
-                                appt.payment?.paymentStatus === 'paid'
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                  : appt.payment?.paymentOption === 'emi'
-                                  ? 'bg-purple-100 text-purple-900 border border-purple-300'
-                                  : 'bg-amber-100 text-amber-900 border border-amber-300'
-                              }`}>
-                                {appt.payment?.paymentStatus === 'paid' ? (
-                                  <>
-                                    <CheckCircle className="w-3.5 h-3.5 text-emerald-700" />
-                                    <span>PAID & VERIFIED (ONLINE UPI) ✓</span>
-                                  </>
-                                ) : appt.payment?.paymentOption === 'emi' ? (
-                                  <>
-                                    <CreditCard className="w-3.5 h-3.5 text-purple-700" />
-                                    <span>0% MEDICAL EMI ACTIVE</span>
-                                  </>
-                                ) : (
-                                  <>
+                            </div>
+                            <p className="text-[11px] text-slate-600 leading-relaxed">
+                              Consultation fee of <strong>₹{appt.payment?.consultationFee || 400}</strong> was decided and permanently locked by doctor. Patient has been notified to complete payment. <strong>Initial payment details (Online UPI UTR, Reception Counter, or EMI) will be displayed here immediately once patient submits payment in their Patient Portal.</strong>
+                            </p>
+                          </div>
+                        )}
+
+                        {/* STATE 3: PATIENT HAS PAID / SUBMITTED PAYMENT - Doctor can now see initial payment status and payment details */}
+                        {!isPending && hasPatientPaidOrSelected && (
+                          <div className="mt-3 p-4 rounded-2xl border text-xs space-y-2.5 bg-slate-50/95 border-slate-200">
+                            
+                            {/* Header: Status Banner & Amount */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200">
+                              <div className="flex items-center gap-2">
+                                <span className="font-extrabold uppercase text-[10px] tracking-wider text-slate-500">
+                                  Patient Initial Payment Status:
+                                </span>
+                                <span className={`px-2.5 py-1 rounded-full font-black text-xs inline-flex items-center gap-1.5 ${
+                                  appt.payment?.paymentStatus === 'paid'
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                    : appt.payment?.paymentOption === 'emi'
+                                    ? 'bg-purple-100 text-purple-900 border border-purple-300'
+                                    : 'bg-amber-100 text-amber-900 border border-amber-300'
+                                }`}>
+                                  {appt.payment?.paymentStatus === 'paid' ? (
+                                    <>
+                                      <CheckCircle className="w-3.5 h-3.5 text-emerald-700" />
+                                      <span>PAID & VERIFIED (ONLINE UPI) ✓</span>
+                                    </>
+                                  ) : appt.payment?.paymentOption === 'emi' ? (
+                                    <>
+                                      <CreditCard className="w-3.5 h-3.5 text-purple-700" />
+                                      <span>0% MEDICAL EMI ACTIVE</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Building2 className="w-3.5 h-3.5 text-amber-700" />
+                                      <span>PAY AT RECEPTION COUNTER (ARRIVING)</span>
+                                    </>
+                                  )}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] text-slate-500">Doctor Prescribed Fee:</span>
+                                <span className="text-base font-black text-sky-900">🔒 ₹{appt.payment?.consultationFee || 400}.00 (Locked)</span>
+                              </div>
+                            </div>
+
+                            {/* Specific Fields Filled by Patient */}
+                            {appt.payment?.paymentOption === 'online_upi' ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
+                                <div>
+                                  <span className="text-[10px] text-emerald-800 uppercase font-bold block">Method Selected</span>
+                                  <span className="font-bold text-emerald-950 flex items-center gap-1">
+                                    <QrCode className="w-3.5 h-3.5 text-emerald-700" />
+                                    Online UPI QR Scanner
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] text-emerald-800 uppercase font-bold block">Patient's UTR / Transaction No.</span>
+                                  <span className="font-mono font-black text-emerald-900 bg-white px-2 py-0.5 rounded border border-emerald-300 inline-block text-xs">
+                                    {appt.payment.transactionId || 'Payment Confirmed by Patient'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] text-emerald-800 uppercase font-bold block">Payment Timestamp</span>
+                                  <span className="font-medium text-emerald-900">{appt.payment.paidAt || 'Recorded at booking'}</span>
+                                </div>
+                              </div>
+                            ) : appt.payment?.paymentOption === 'emi' && appt.payment.emiDetails ? (
+                              <div className="bg-purple-50/80 p-3 rounded-xl border border-purple-200 space-y-2">
+                                <div className="flex flex-wrap items-center justify-between text-purple-950 font-bold">
+                                  <span className="flex items-center gap-1.5">
+                                    <CreditCard className="w-4 h-4 text-purple-700" />
+                                    Medical Care EMI ({appt.payment.emiDetails.planMonths} Months Plan)
+                                  </span>
+                                  <span className="font-black text-purple-900 text-xs">
+                                    ₹{appt.payment.emiDetails.monthlyInstallment}/mo • 0% Interest
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] bg-white p-2.5 rounded-lg border border-purple-100 text-purple-900">
+                                  <div>
+                                    <span className="text-slate-400 block text-[9px] uppercase font-bold">Financing Partner</span>
+                                    <span className="font-bold">{appt.payment.emiDetails.financingPartner}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-[9px] uppercase font-bold">Applicant Name</span>
+                                    <span className="font-bold">{appt.payment.emiDetails.applicantName}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-[9px] uppercase font-bold">PAN / Aadhaar (Last 4)</span>
+                                    <span className="font-mono font-bold">****{appt.payment.emiDetails.panOrAadhaarLast4}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-[9px] uppercase font-bold">Verified Phone</span>
+                                    <span className="font-bold">{appt.payment.emiDetails.contactPhone}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-amber-50/70 p-3 rounded-xl border border-amber-200 items-center">
+                                <div>
+                                  <span className="text-[10px] text-amber-800 uppercase font-bold block">Method Selected</span>
+                                  <span className="font-bold text-amber-950 flex items-center gap-1">
                                     <Building2 className="w-3.5 h-3.5 text-amber-700" />
-                                    <span>PAY AT RECEPTION COUNTER (PENDING)</span>
-                                  </>
-                                )}
-                              </span>
-                            </div>
+                                    Pay at Hospital Counter
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] text-amber-800 uppercase font-bold block">Collection Status</span>
+                                  <span className="font-bold text-amber-900">
+                                    {appt.payment?.paymentStatus === 'paid' ? 'Collected at Counter ✓' : `Pending ₹${appt.payment?.consultationFee || 400} on Arrival`}
+                                  </span>
+                                </div>
+                                <div className="flex justify-end">
+                                  {appt.payment?.paymentStatus !== 'paid' && (
+                                    <button
+                                      onClick={() => handleMarkPaymentPaid(appt)}
+                                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                                    >
+                                      <CheckCircle className="w-3.5 h-3.5" />
+                                      <span>Mark Collected</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
 
-                            <div className="flex items-center gap-2">
-                              <span className="text-[11px] text-slate-500">Consultation Fee:</span>
-                              <span className="text-base font-black text-slate-900">₹{appt.payment?.consultationFee || 400}.00</span>
-                            </div>
                           </div>
+                        )}
 
-                          {/* Specific Fields Filled by Patient */}
-                          {appt.payment?.paymentOption === 'online_upi' ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
-                              <div>
-                                <span className="text-[10px] text-emerald-800 uppercase font-bold block">Method Selected</span>
-                                <span className="font-bold text-emerald-950 flex items-center gap-1">
-                                  <QrCode className="w-3.5 h-3.5 text-emerald-700" />
-                                  Online UPI QR Scanner
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] text-emerald-800 uppercase font-bold block">Patient's UTR / Transaction No.</span>
-                                <span className="font-mono font-black text-emerald-900 bg-white px-2 py-0.5 rounded border border-emerald-300 inline-block text-xs">
-                                  {appt.payment.transactionId || 'Payment Confirmed by Patient'}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] text-emerald-800 uppercase font-bold block">Payment Timestamp</span>
-                                <span className="font-medium text-emerald-900">{appt.payment.paidAt || 'Recorded at booking'}</span>
-                              </div>
-                            </div>
-                          ) : appt.payment?.paymentOption === 'emi' && appt.payment.emiDetails ? (
-                            <div className="bg-purple-50/80 p-3 rounded-xl border border-purple-200 space-y-2">
-                              <div className="flex flex-wrap items-center justify-between text-purple-950 font-bold">
-                                <span className="flex items-center gap-1.5">
-                                  <CreditCard className="w-4 h-4 text-purple-700" />
-                                  Medical Care EMI ({appt.payment.emiDetails.planMonths} Months Plan)
-                                </span>
-                                <span className="font-black text-purple-900 text-xs">
-                                  ₹{appt.payment.emiDetails.monthlyInstallment}/mo • 0% Interest
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] bg-white p-2.5 rounded-lg border border-purple-100 text-purple-900">
-                                <div>
-                                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Financing Partner</span>
-                                  <span className="font-bold">{appt.payment.emiDetails.financingPartner}</span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Applicant Name</span>
-                                  <span className="font-bold">{appt.payment.emiDetails.applicantName}</span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block text-[9px] uppercase font-bold">PAN / Aadhaar (Last 4)</span>
-                                  <span className="font-mono font-bold">****{appt.payment.emiDetails.panOrAadhaarLast4}</span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Verified Phone</span>
-                                  <span className="font-bold">{appt.payment.emiDetails.contactPhone}</span>
-                                </div>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-amber-50/70 p-3 rounded-xl border border-amber-200">
-                              <div>
-                                <span className="text-[10px] text-amber-800 uppercase font-bold block">Method Selected</span>
-                                <span className="font-bold text-amber-950 flex items-center gap-1">
-                                  <Building2 className="w-3.5 h-3.5 text-amber-700" />
-                                  Pay at Hospital Counter
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] text-amber-800 uppercase font-bold block">Collection Counter Desk</span>
-                                <span className="font-bold text-amber-900">OPD Reception Counter 01</span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] text-amber-800 uppercase font-bold block">Counter Action</span>
-                                <span className="font-black text-amber-900">
-                                  {appt.payment?.paymentStatus === 'paid' ? 'Collected at Counter ✓' : `Collect ₹${appt.payment?.consultationFee || 400} on Arrival`}
-                                </span>
-                              </div>
-                            </div>
+                        {/* Extra Quick Badges (Reports & Vitals) */}
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          {appt.reports && appt.reports.length > 0 && (
+                            <span className="bg-blue-50 text-blue-700 font-semibold px-2 py-0.5 rounded-md border border-blue-100 text-[11px]">
+                              📑 {appt.reports.length} Lab Report{appt.reports.length > 1 ? 's' : ''} on File
+                            </span>
                           )}
-
-                          {/* Extra Quick Badges (Reports & Vitals) */}
-                          <div className="flex flex-wrap items-center gap-2 pt-1">
-                            {appt.reports && appt.reports.length > 0 && (
-                              <span className="bg-blue-50 text-blue-700 font-semibold px-2 py-0.5 rounded-md border border-blue-100 text-[11px]">
-                                📑 {appt.reports.length} Lab Report{appt.reports.length > 1 ? 's' : ''} on File
-                              </span>
-                            )}
-                            {appt.vitals?.bp && (
-                              <span className="bg-emerald-50 text-emerald-800 font-semibold px-2 py-0.5 rounded-md border border-emerald-100 text-[11px]">
-                                BP: {appt.vitals.bp} • Pulse: {appt.vitals.pulse}
-                              </span>
-                            )}
-                          </div>
+                          {appt.vitals?.bp && (
+                            <span className="bg-emerald-50 text-emerald-800 font-semibold px-2 py-0.5 rounded-md border border-emerald-100 text-[11px]">
+                              BP: {appt.vitals.bp} • Pulse: {appt.vitals.pulse}
+                            </span>
+                          )}
                         </div>
 
                       </div>
@@ -834,13 +897,13 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
                       {/* Right: Doctor Action Buttons */}
                       <div className="flex flex-wrap lg:flex-col items-stretch justify-center gap-2 shrink-0 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100">
                         
-                        {/* 1. Set Appointment Time */}
+                        {/* 1. Set Appointment Time & Prescribe Fee */}
                         <button
                           onClick={() => handleOpenTimeSlotModal(appt)}
                           className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
                         >
                           <Clock className="w-3.5 h-3.5" />
-                          <span>{isPending ? 'Set Time Slot & Confirm' : 'Modify Time Slot'}</span>
+                          <span>{isPending ? 'Allocate Slot & Prescribe Fee' : 'Modify Time Slot'}</span>
                         </button>
 
                         {/* 2. Full Patient File Modal */}
@@ -852,14 +915,16 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
                           <span>Patient File & Reports</span>
                         </button>
 
-                        {/* 3. View Payment Details Modal */}
-                        <button
-                          onClick={() => setSelectedPaymentModalAppt(appt)}
-                          className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-bold rounded-xl border border-emerald-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <CreditCard className="w-3.5 h-3.5 text-emerald-700" />
-                          <span>View Payment Details</span>
-                        </button>
+                        {/* 3. View Payment Details Modal (Only visible once patient has paid or selected payment) */}
+                        {hasPatientPaidOrSelected && (
+                          <button
+                            onClick={() => setSelectedPaymentModalAppt(appt)}
+                            className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-bold rounded-xl border border-emerald-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <CreditCard className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>View Payment Details</span>
+                          </button>
+                        )}
 
                         {/* 4. Mark Completed */}
                         {isConfirmed && (
@@ -1262,35 +1327,81 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
                 </div>
               </div>
 
-              {/* Consultation Fee & Payment Mode */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Consultation Fee (₹)
-                  </label>
-                  <input
-                    type="number"
-                    value={consultationFeeInput}
-                    onChange={(e) => setConsultationFeeInput(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold"
-                  />
+              {/* Consultation Fee Section (Locking Enforced) */}
+              {isFeeLockedModal ? (
+                <div className="p-4 bg-slate-100 rounded-2xl border-2 border-slate-300 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      <span>Doctor Prescribed Fee (Permanently Fixed & Locked)</span>
+                    </label>
+                    <span className="text-sm font-black text-slate-900 bg-white px-3 py-1 rounded-lg border border-slate-300 shadow-2xs">
+                      🔒 ₹{consultationFeeInput}.00
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    This consultation fee was decided by the doctor upon confirmation and is permanently fixed. No one can change this fee.
+                  </p>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Payment Status
-                  </label>
-                  <select
-                    value={paymentStatusInput}
-                    onChange={(e) => setPaymentStatusInput(e.target.value as 'pending' | 'paid' | 'pay_at_clinic' | 'emi_processing')}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white"
-                  >
-                    <option value="pay_at_clinic">Pay at Clinic Counter</option>
-                    <option value="paid">Already Paid (Online/Advance)</option>
-                    <option value="emi_processing">EMI Processing Active</option>
-                    <option value="pending">Pending Payment</option>
-                  </select>
+              ) : (
+                <div className="p-4 bg-sky-50/90 rounded-2xl border-2 border-sky-300 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-sky-950 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🩺 Prescribe Consultation Fee</span>
+                      <span className="text-[10px] bg-sky-200 text-sky-800 font-bold px-2 py-0.5 rounded-full">Doctor Decision</span>
+                    </label>
+                    <span className="text-sm font-black text-sky-900 bg-white px-2.5 py-0.5 rounded-lg border border-sky-200 shadow-2xs">
+                      ₹{consultationFeeInput}.00
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Decide the consultation fee for this patient. <strong>Once decided and confirmed, this fee is permanently locked and cannot be changed by anyone.</strong> The patient will see this fee in their portal.
+                  </p>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Fee Amount (₹) <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-xs font-bold text-slate-500">₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="50"
+                        value={consultationFeeInput}
+                        onChange={(e) => setConsultationFeeInput(Number(e.target.value))}
+                        className="w-full pl-7 pr-3 py-2 rounded-xl border border-sky-300 bg-white text-xs font-black text-slate-900 focus:ring-2 focus:ring-sky-200 outline-hidden"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quick Fee Presets */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-sky-200/60">
+                    <span className="text-[10px] font-bold text-slate-500 mr-1">Quick Presets:</span>
+                    {[
+                      { label: 'Free (₹0)', val: 0 },
+                      { label: '₹300 (Follow-up)', val: 300 },
+                      { label: '₹400 (Standard)', val: 400 },
+                      { label: '₹500 (Specialist)', val: 500 },
+                      { label: '₹800 (Detailed)', val: 800 },
+                      { label: '₹1000 (Procedure)', val: 1000 },
+                    ].map((preset) => (
+                      <button
+                        key={preset.val}
+                        type="button"
+                        onClick={() => setConsultationFeeInput(preset.val)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                          consultationFeeInput === preset.val
+                            ? 'bg-sky-600 text-white shadow-xs'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:border-sky-400'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Preparation / Instructions */}
               <div>
@@ -1652,167 +1763,206 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
               </div>
             )}
 
-            {/* SUB-TAB 4: BILLING & PAYMENT (All payment details visible to Doctor) */}
+            {/* SUB-TAB 4: BILLING & PAYMENT (Visible to Doctor) */}
             {detailsSubTab === 'billing' && (
               <div className="mt-5 space-y-4 text-xs sm:text-sm">
-                
-                {/* Main Billing Summary Card */}
-                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
-                  <div className="flex justify-between items-center pb-2 border-b border-slate-200">
-                    <span className="text-slate-500">Invoice Number:</span>
-                    <span className="font-mono font-bold text-slate-900">
-                      {patientDetailsModalAppt.payment?.invoiceNumber || `INV-${patientDetailsModalAppt.id?.slice(0, 6)}`}
-                    </span>
-                  </div>
+                {!patientDetailsModalAppt.payment?.paymentOption ? (
+                  /* State: Patient has not submitted payment yet */
+                  <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+                    <div className="flex justify-between items-center pb-2.5 border-b border-slate-200">
+                      <span className="text-slate-500 font-medium">Invoice Reference:</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {patientDetailsModalAppt.payment?.invoiceNumber || `INV-${patientDetailsModalAppt.id?.slice(0, 6)}`}
+                      </span>
+                    </div>
 
-                  <div className="flex justify-between items-center pb-2 border-b border-slate-200">
-                    <span className="text-slate-500">Consultation Charges:</span>
-                    <span className="font-bold text-slate-900 text-base">
-                      ₹{patientDetailsModalAppt.payment?.consultationFee || 400}.00
-                    </span>
-                  </div>
+                    <div className="flex justify-between items-center pb-2.5 border-b border-slate-200">
+                      <span className="text-slate-500 font-medium">Doctor Prescribed Consultation Fee:</span>
+                      <span className="font-black text-sky-900 text-base">
+                        🔒 ₹{patientDetailsModalAppt.payment?.consultationFee || 400}.00 (Permanently Locked)
+                      </span>
+                    </div>
 
-                  <div className="flex justify-between items-center pb-2 border-b border-slate-200">
-                    <span className="text-slate-500">Payment Status:</span>
-                    <span className={`px-2.5 py-0.5 rounded-full font-black text-xs ${
-                      patientDetailsModalAppt.payment?.paymentStatus === 'paid'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : patientDetailsModalAppt.payment?.paymentOption === 'emi'
-                        ? 'bg-purple-100 text-purple-900'
-                        : 'bg-amber-100 text-amber-900'
-                    }`}>
-                      {patientDetailsModalAppt.payment?.paymentStatus === 'paid' 
-                        ? 'PAID ✓ (VERIFIED)' 
-                        : patientDetailsModalAppt.payment?.paymentOption === 'emi'
-                        ? 'EMI PLAN ACTIVE'
-                        : 'PAY AT COUNTER / PENDING'}
-                    </span>
-                  </div>
+                    <div className="flex justify-between items-center pb-2.5 border-b border-slate-200">
+                      <span className="text-slate-500 font-medium">Initial Payment Status:</span>
+                      <span className="px-3 py-1 rounded-full font-bold text-xs bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-600" />
+                        Awaiting Patient Payment in Portal
+                      </span>
+                    </div>
 
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500">Selected Payment Method:</span>
-                    <span className="font-bold text-slate-800">
-                      {patientDetailsModalAppt.payment?.paymentOption === 'online_upi' && '📱 Online UPI QR Scanner'}
-                      {patientDetailsModalAppt.payment?.paymentOption === 'in_hospital' && '🏥 Pay at Hospital Counter'}
-                      {patientDetailsModalAppt.payment?.paymentOption === 'emi' && '💳 0% Medical Care EMI'}
-                      {!patientDetailsModalAppt.payment?.paymentOption && (patientDetailsModalAppt.payment?.paymentMethod || 'OPD Registration Desk')}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Specific Details View for Option 1: ONLINE UPI */}
-                {patientDetailsModalAppt.payment?.paymentOption === 'online_upi' && (
-                  <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-200 space-y-2">
-                    <h5 className="font-bold text-emerald-950 flex items-center gap-1.5 uppercase text-xs tracking-wider">
-                      <QrCode className="w-4 h-4 text-emerald-700" />
-                      Online UPI Payment Verification Record
-                    </h5>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-white p-3 rounded-xl border border-emerald-100">
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-bold">UPI Merchant ID</span>
-                        <span className="font-mono font-bold text-slate-800">
-                          {patientDetailsModalAppt.payment.upiIdUsed || 'malkarhospital@okhdfcbank'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Transaction / UTR Number</span>
-                        <span className="font-mono font-black text-emerald-700">
-                          {patientDetailsModalAppt.payment.transactionId || 'Transferred Online'}
-                        </span>
-                      </div>
-                      <div className="sm:col-span-2">
-                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Payment Verified Timestamp</span>
-                        <span className="font-medium text-slate-700">
-                          {patientDetailsModalAppt.payment.paidAt || 'Transferred at Booking'}
-                        </span>
-                      </div>
+                    <div className="p-4 bg-sky-50/80 rounded-2xl border border-sky-200 text-xs text-sky-950 space-y-1">
+                      <p className="font-bold flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-sky-700" />
+                        Consultation Fee Locked by Doctor
+                      </p>
+                      <p className="text-slate-600 leading-relaxed">
+                        The doctor decided fee of ₹{patientDetailsModalAppt.payment?.consultationFee || 400} is locked and cannot be changed by anyone. The patient has not submitted payment yet. <strong>Initial payment details (Online UPI UTR, Reception Counter, or EMI) will be visible here immediately once the patient completes payment in their portal.</strong>
+                      </p>
                     </div>
                   </div>
-                )}
-
-                {/* Specific Details View for Option 2: PAY IN HOSPITAL */}
-                {patientDetailsModalAppt.payment?.paymentOption === 'in_hospital' && (
-                  <div className="p-4 bg-amber-50/70 rounded-2xl border border-amber-200 space-y-2">
-                    <h5 className="font-bold text-amber-950 flex items-center gap-1.5 uppercase text-xs tracking-wider">
-                      <Building2 className="w-4 h-4 text-amber-700" />
-                      Hospital Counter Collection Details
-                    </h5>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-white p-3 rounded-xl border border-amber-100">
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Amount to Collect</span>
-                        <span className="font-black text-amber-900 text-sm">
-                          ₹{patientDetailsModalAppt.payment?.consultationFee || 400}.00
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Collection Counter</span>
-                        <span className="font-bold text-slate-800">OPD Reception Counter 01</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Specific Details View for Option 3: MEDICAL CARE EMI */}
-                {patientDetailsModalAppt.payment?.paymentOption === 'emi' && patientDetailsModalAppt.payment.emiDetails && (
-                  <div className="p-4 bg-purple-50/80 rounded-2xl border border-purple-200 space-y-2">
-                    <h5 className="font-bold text-purple-950 flex items-center gap-1.5 uppercase text-xs tracking-wider">
-                      <CreditCard className="w-4 h-4 text-purple-700" />
-                      Medical Care EMI Application File
-                    </h5>
-                    <div className="grid grid-cols-2 gap-2 text-xs bg-white p-3.5 rounded-xl border border-purple-100">
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Financing Bank / Partner</span>
-                        <span className="font-bold text-purple-900">
-                          {patientDetailsModalAppt.payment.emiDetails.financingPartner}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Tenure & Monthly Installment</span>
-                        <span className="font-black text-purple-950">
-                          {patientDetailsModalAppt.payment.emiDetails.planMonths} Months @ ₹{patientDetailsModalAppt.payment.emiDetails.monthlyInstallment}/mo
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Applicant / Cardholder</span>
-                        <span className="font-bold text-slate-800">
-                          {patientDetailsModalAppt.payment.emiDetails.applicantName}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Employment Source</span>
-                        <span className="font-medium text-slate-700">
-                          {patientDetailsModalAppt.payment.emiDetails.employmentType}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-bold">PAN / Aadhaar (Last 4)</span>
+                ) : (
+                  /* State: Patient has submitted payment */
+                  <>
+                    {/* Main Billing Summary Card */}
+                    <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
+                      <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                        <span className="text-slate-500">Invoice Number:</span>
                         <span className="font-mono font-bold text-slate-900">
-                          ****{patientDetailsModalAppt.payment.emiDetails.panOrAadhaarLast4}
+                          {patientDetailsModalAppt.payment?.invoiceNumber || `INV-${patientDetailsModalAppt.id?.slice(0, 6)}`}
                         </span>
                       </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Contact Phone</span>
+
+                      <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                        <span className="text-slate-500">Consultation Charges:</span>
+                        <span className="font-bold text-slate-900 text-base">
+                          🔒 ₹{patientDetailsModalAppt.payment?.consultationFee || 400}.00 (Locked)
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                        <span className="text-slate-500">Payment Status:</span>
+                        <span className={`px-2.5 py-0.5 rounded-full font-black text-xs ${
+                          patientDetailsModalAppt.payment?.paymentStatus === 'paid'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : patientDetailsModalAppt.payment?.paymentOption === 'emi'
+                            ? 'bg-purple-100 text-purple-900'
+                            : 'bg-amber-100 text-amber-900'
+                        }`}>
+                          {patientDetailsModalAppt.payment?.paymentStatus === 'paid' 
+                            ? 'PAID ✓ (VERIFIED)' 
+                            : patientDetailsModalAppt.payment?.paymentOption === 'emi'
+                            ? 'EMI PLAN ACTIVE'
+                            : 'PAY AT COUNTER / PENDING'}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Selected Payment Method:</span>
                         <span className="font-bold text-slate-800">
-                          {patientDetailsModalAppt.payment.emiDetails.contactPhone}
+                          {patientDetailsModalAppt.payment?.paymentOption === 'online_upi' && '📱 Online UPI QR Scanner'}
+                          {patientDetailsModalAppt.payment?.paymentOption === 'in_hospital' && '🏥 Pay at Hospital Counter'}
+                          {patientDetailsModalAppt.payment?.paymentOption === 'emi' && '💳 0% Medical Care EMI'}
+                          {!patientDetailsModalAppt.payment?.paymentOption && (patientDetailsModalAppt.payment?.paymentMethod || 'OPD Registration Desk')}
                         </span>
                       </div>
                     </div>
-                  </div>
-                )}
 
-                {/* Doctor Action Buttons */}
-                <div className="pt-2 flex flex-wrap gap-2">
-                  {patientDetailsModalAppt.payment?.paymentStatus !== 'paid' && (
-                    <button
-                      type="button"
-                      onClick={() => handleMarkPaymentPaid(patientDetailsModalAppt)}
-                      className="py-2.5 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      <span>Confirm & Mark Fee as Paid</span>
-                    </button>
-                  )}
-                </div>
+                    {/* Specific Details View for Option 1: ONLINE UPI */}
+                    {patientDetailsModalAppt.payment?.paymentOption === 'online_upi' && (
+                      <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-200 space-y-2">
+                        <h5 className="font-bold text-emerald-950 flex items-center gap-1.5 uppercase text-xs tracking-wider">
+                          <QrCode className="w-4 h-4 text-emerald-700" />
+                          Online UPI Payment Verification Record
+                        </h5>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-white p-3 rounded-xl border border-emerald-100">
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">UPI Merchant ID</span>
+                            <span className="font-mono font-bold text-slate-800">
+                              {patientDetailsModalAppt.payment.upiIdUsed || 'malkarhospital@okhdfcbank'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Transaction / UTR Number</span>
+                            <span className="font-mono font-black text-emerald-700">
+                              {patientDetailsModalAppt.payment.transactionId || 'Transferred Online'}
+                            </span>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Payment Verified Timestamp</span>
+                            <span className="font-medium text-slate-700">
+                              {patientDetailsModalAppt.payment.paidAt || 'Transferred at Booking'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Specific Details View for Option 2: PAY IN HOSPITAL */}
+                    {patientDetailsModalAppt.payment?.paymentOption === 'in_hospital' && (
+                      <div className="p-4 bg-amber-50/70 rounded-2xl border border-amber-200 space-y-2">
+                        <h5 className="font-bold text-amber-950 flex items-center gap-1.5 uppercase text-xs tracking-wider">
+                          <Building2 className="w-4 h-4 text-amber-700" />
+                          Hospital Counter Collection Details
+                        </h5>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-white p-3 rounded-xl border border-amber-100">
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Amount to Collect</span>
+                            <span className="font-black text-amber-900 text-sm">
+                              ₹{patientDetailsModalAppt.payment?.consultationFee || 400}.00
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Collection Counter</span>
+                            <span className="font-bold text-slate-800">OPD Reception Counter 01</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Specific Details View for Option 3: MEDICAL CARE EMI */}
+                    {patientDetailsModalAppt.payment?.paymentOption === 'emi' && patientDetailsModalAppt.payment.emiDetails && (
+                      <div className="p-4 bg-purple-50/80 rounded-2xl border border-purple-200 space-y-2">
+                        <h5 className="font-bold text-purple-950 flex items-center gap-1.5 uppercase text-xs tracking-wider">
+                          <CreditCard className="w-4 h-4 text-purple-700" />
+                          Medical Care EMI Application File
+                        </h5>
+                        <div className="grid grid-cols-2 gap-2 text-xs bg-white p-3.5 rounded-xl border border-purple-100">
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Financing Bank / Partner</span>
+                            <span className="font-bold text-purple-900">
+                              {patientDetailsModalAppt.payment.emiDetails.financingPartner}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Tenure & Monthly Installment</span>
+                            <span className="font-black text-purple-950">
+                              {patientDetailsModalAppt.payment.emiDetails.planMonths} Months @ ₹{patientDetailsModalAppt.payment.emiDetails.monthlyInstallment}/mo
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Applicant / Cardholder</span>
+                            <span className="font-bold text-slate-800">
+                              {patientDetailsModalAppt.payment.emiDetails.applicantName}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Employment Source</span>
+                            <span className="font-medium text-slate-700">
+                              {patientDetailsModalAppt.payment.emiDetails.employmentType}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">PAN / Aadhaar (Last 4)</span>
+                            <span className="font-mono font-bold text-slate-900">
+                              ****{patientDetailsModalAppt.payment.emiDetails.panOrAadhaarLast4}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Contact Phone</span>
+                            <span className="font-bold text-slate-800">
+                              {patientDetailsModalAppt.payment.emiDetails.contactPhone}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Doctor Action Buttons */}
+                    <div className="pt-2 flex flex-wrap gap-2">
+                      {patientDetailsModalAppt.payment?.paymentStatus !== 'paid' && (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkPaymentPaid(patientDetailsModalAppt)}
+                          className="py-2.5 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          <span>Confirm & Mark Fee as Paid</span>
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -1886,7 +2036,7 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
                 </div>
                 <div className="flex justify-between pb-2 border-b border-slate-200/70">
                   <span className="text-slate-500">Consultation Charges:</span>
-                  <span className="font-bold text-slate-900 text-base">₹{selectedPaymentModalAppt.payment?.consultationFee || 400}.00</span>
+                  <span className="font-bold text-slate-900 text-base">🔒 ₹{selectedPaymentModalAppt.payment?.consultationFee || 400}.00 (Locked by Doctor)</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Payment Option Chosen:</span>
