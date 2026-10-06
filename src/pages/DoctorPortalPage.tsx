@@ -13,6 +13,7 @@ import {
   doctorUpdatePayment,
   updateAppointmentStatus, 
   cancelAppointment,
+  deleteAppointmentRecord,
   subscribeToInquiries,
   updateInquiryStatus,
   subscribeToRegisteredPatients,
@@ -44,7 +45,8 @@ import {
   LogOut,
   Users,
   QrCode,
-  Building2
+  Building2,
+  Trash2
 } from 'lucide-react';
 import { HOSPITAL_INFO } from '../data/hospitalData';
 
@@ -81,6 +83,10 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
   const [patientDetailsModalAppt, setPatientDetailsModalAppt] = useState<AppointmentRecord | null>(null);
   const [detailsSubTab, setDetailsSubTab] = useState<'overview' | 'reports' | 'vitals' | 'billing'>('overview');
   const [selectedPaymentModalAppt, setSelectedPaymentModalAppt] = useState<AppointmentRecord | null>(null);
+
+  // Appointment Deletion State (Dustbin symbol to remove whole appointment strip)
+  const [appointmentToDelete, setAppointmentToDelete] = useState<AppointmentRecord | null>(null);
+  const [isDeletingAppointment, setIsDeletingAppointment] = useState(false);
 
   // Vitals State
   const [vitalsInput, setVitalsInput] = useState<PatientVitals>({});
@@ -254,6 +260,36 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
       setTimeout(() => setNotification(null), 4000);
     } catch (err) {
       console.error('Failed to update payment:', err);
+    }
+  };
+
+  // Doctor power: permanently remove whole appointment strip from portal
+  const handleConfirmDeleteAppointment = async () => {
+    if (!appointmentToDelete?.id) return;
+    setIsDeletingAppointment(true);
+    try {
+      await deleteAppointmentRecord(appointmentToDelete.id);
+      setAppointments((prev) => prev.filter((a) => a.id !== appointmentToDelete.id));
+      if (patientDetailsModalAppt?.id === appointmentToDelete.id) {
+        setPatientDetailsModalAppt(null);
+      }
+      if (selectedPaymentModalAppt?.id === appointmentToDelete.id) {
+        setSelectedPaymentModalAppt(null);
+      }
+      setNotification({
+        message: `Appointment strip for "${appointmentToDelete.patientName}" removed successfully from portal.`,
+        type: 'success',
+      });
+      setAppointmentToDelete(null);
+      setTimeout(() => setNotification(null), 4000);
+    } catch (err) {
+      console.error('Failed to remove appointment strip:', err);
+      setNotification({
+        message: 'Failed to remove appointment strip. Please check network connection.',
+        type: 'error',
+      });
+    } finally {
+      setIsDeletingAppointment(false);
     }
   };
 
@@ -593,7 +629,7 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
                 return (
                   <div
                     key={appt.id}
-                    className={`bg-white rounded-3xl p-5 sm:p-7 border shadow-xs transition-all ${
+                    className={`bg-white rounded-3xl p-5 sm:p-7 border shadow-xs transition-all relative ${
                       isPending
                         ? 'border-amber-300 ring-2 ring-amber-100 bg-linear-to-r from-amber-50/20 via-white to-white'
                         : isConfirmed
@@ -601,6 +637,16 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
                         : 'border-slate-200'
                     }`}
                   >
+                    {/* Quick Dustbin Symbol in top corner of appointment strip */}
+                    <button
+                      onClick={() => setAppointmentToDelete(appt)}
+                      title="Remove whole appointment strip (Dustbin)"
+                      aria-label="Remove appointment strip"
+                      className="absolute top-4 right-4 sm:top-5 sm:right-6 p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all border border-slate-200/60 hover:border-red-200 cursor-pointer flex items-center justify-center group z-10"
+                    >
+                      <Trash2 className="w-4 h-4 text-slate-400 group-hover:text-red-600 group-hover:scale-110 transition-transform" />
+                    </button>
+
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
                       
                       {/* Left: Patient Details */}
@@ -945,6 +991,17 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
                             Cancel Appointment
                           </button>
                         )}
+
+                        {/* 5. Dustbin Symbol: Remove Whole Appointment Strip */}
+                        <button
+                          onClick={() => setAppointmentToDelete(appt)}
+                          title="Remove whole appointment strip (Dustbin)"
+                          aria-label="Remove appointment strip"
+                          className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 hover:text-red-800 text-xs font-bold rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs group"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-600 group-hover:scale-110 transition-transform" />
+                          <span>Remove Strip</span>
+                        </button>
 
                       </div>
 
@@ -1467,12 +1524,22 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-6 sm:p-8 shadow-2xl relative animate-in zoom-in-95 max-h-[92vh] overflow-y-auto">
             
-            <button
-              onClick={() => setPatientDetailsModalAppt(null)}
-              className="absolute top-5 right-5 text-slate-400 hover:text-slate-700 text-xl font-bold w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer"
-            >
-              ✕
-            </button>
+            <div className="absolute top-5 right-5 flex items-center gap-2">
+              <button
+                onClick={() => setAppointmentToDelete(patientDetailsModalAppt)}
+                title="Remove whole appointment strip (Dustbin)"
+                aria-label="Remove appointment"
+                className="text-red-500 hover:text-red-700 w-8 h-8 rounded-full bg-red-50 hover:bg-red-100 flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setPatientDetailsModalAppt(null)}
+                className="text-slate-400 hover:text-slate-700 text-xl font-bold w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
 
             {/* Modal Header */}
             <div className="flex items-center gap-4 pb-4 border-b border-slate-200">
@@ -2160,6 +2227,87 @@ export const DoctorPortalPage: React.FC<DoctorPortalPageProps> = ({ setCurrentTa
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* DUSTBIN CONFIRMATION MODAL: REMOVE WHOLE APPOINTMENT STRIP */}
+      {/* ============================================================== */}
+      {appointmentToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center shrink-0 shadow-inner">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900">
+                  Remove Appointment Strip?
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  You are removing this patient appointment strip completely from your doctor portal.
+                </p>
+              </div>
+            </div>
+
+            {/* Appointment Preview Info Box */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Patient Name:</span>
+                <span className="font-black text-slate-900 text-sm">{appointmentToDelete.patientName}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Appointment ID:</span>
+                <span className="font-mono font-bold text-sky-800 bg-sky-50 px-2 py-0.5 rounded border border-sky-100">
+                  {appointmentToDelete.id?.slice(0, 10)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Date & Time:</span>
+                <span className="font-semibold text-slate-800">
+                  {appointmentToDelete.appointmentDate} • {appointmentToDelete.assignedTime || appointmentToDelete.preferredTimeWindow || 'Time Pending'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Patient Mobile:</span>
+                <span className="font-medium text-slate-800">{appointmentToDelete.phone}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Prescribed Fee:</span>
+                <span className="font-bold text-slate-900">
+                  ₹{appointmentToDelete.payment?.consultationFee || 400}.00
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-red-600 bg-red-50 p-3 rounded-xl border border-red-200">
+              ⚠️ <strong>Warning:</strong> Clicking &quot;Remove Appointment Strip&quot; will permanently erase this appointment strip from your portal.
+            </p>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setAppointmentToDelete(null)}
+                disabled={isDeletingAppointment}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmDeleteAppointment}
+                disabled={isDeletingAppointment}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-colors shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isDeletingAppointment ? 'Removing Strip...' : 'Remove Appointment Strip'}</span>
+              </button>
+            </div>
+
           </div>
         </div>
       )}

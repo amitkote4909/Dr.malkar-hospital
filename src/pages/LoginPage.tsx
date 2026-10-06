@@ -9,7 +9,8 @@ import {
   Stethoscope, 
   User, 
   KeyRound, 
-  CheckCircle2
+  CheckCircle2,
+  Phone
 } from 'lucide-react';
 
 interface LoginPageProps {
@@ -23,8 +24,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentTab, initialSect
   // Section toggle: 'patient' | 'doctor'
   const [activeSection, setActiveSection] = useState<'patient' | 'doctor'>(initialSection);
 
-  // Patient Login State
+  // Patient Login State (Requires Email, Mobile Number, and Password)
   const [patientEmail, setPatientEmail] = useState('');
+  const [patientPhone, setPatientPhone] = useState('');
   const [patientPassword, setPatientPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
 
@@ -37,20 +39,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentTab, initialSect
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Handle Patient Login
+  // Handle Patient Login (Requires Email, Registered Mobile Number, and Password)
   const handlePatientLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccessMsg('');
 
-    if (!patientEmail.trim() || !patientPassword) {
-      setError('Please provide your registered email address and password.');
+    const cleanEmail = patientEmail.trim().toLowerCase();
+    const cleanPhone = patientPhone.trim();
+    const cleanPass = patientPassword;
+
+    if (!cleanEmail || !cleanPhone || !cleanPass) {
+      setError('Please provide all 3 required login fields: Registered Email, Mobile Number, and Password.');
+      return;
+    }
+
+    if (cleanPhone.replace(/\D/g, '').length < 8) {
+      setError('Please enter a valid mobile number (at least 8 to 10 digits) as provided during registration.');
       return;
     }
 
     setIsLoading(true);
     try {
-      await signIn(patientEmail.trim().toLowerCase(), patientPassword);
+      await signIn(cleanEmail, cleanPass, cleanPhone);
       setCurrentTab('patient-portal');
     } catch (err: unknown) {
       console.error('Patient login error:', err);
@@ -186,34 +197,62 @@ export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentTab, initialSect
           {activeSection === 'patient' && (
             <form onSubmit={handlePatientLogin} className="space-y-4">
               <div className="text-left bg-sky-50/60 p-3.5 rounded-xl border border-sky-100 text-xs text-sky-800">
-                <span className="font-bold">👤 Patient Account:</span> Sign in with your registered email and password to view appointments, test reports, and doctor schedules.
+                <span className="font-bold">👤 Patient Account:</span> Sign in with your registered email, mobile number, and password to view appointments, test reports, and doctor schedules.
               </div>
 
+              {/* 1. Patient Email Address */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Patient Email Address
+                  Patient Email Address <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <input
                     type="email"
                     value={patientEmail}
                     onChange={(e) => setPatientEmail(e.target.value)}
+                    placeholder="patient@example.com"
                     required
-                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 text-sm outline-hidden"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 text-sm outline-hidden font-medium"
                   />
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                 </div>
               </div>
 
+              {/* 2. Registered Mobile Number (Requirement matching registration) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                  <span>Registered Mobile Number <span className="text-red-500">*</span></span>
+                  <span className="text-[10px] text-sky-700 font-semibold normal-case bg-sky-50 px-2 py-0.5 rounded border border-sky-100">
+                    Filled during registration
+                  </span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="tel"
+                    value={patientPhone}
+                    onChange={(e) => setPatientPhone(e.target.value)}
+                    placeholder="e.g. 9876543210"
+                    required
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 text-sm outline-hidden font-medium"
+                  />
+                  <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Enter the exact mobile number you provided when creating your patient account.
+                </p>
+              </div>
+
+              {/* 3. Password */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Password
+                  Password <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <input
                     type="password"
                     value={patientPassword}
                     onChange={(e) => setPatientPassword(e.target.value)}
+                    placeholder="••••••••"
                     required
                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 text-sm outline-hidden"
                   />

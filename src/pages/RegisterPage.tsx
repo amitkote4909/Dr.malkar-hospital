@@ -179,19 +179,26 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ setCurrentTab }) => 
               {/* Phone and Date of Birth */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Phone Number <span className="text-red-500">*</span>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                    <span>Mobile Number <span className="text-red-500">*</span></span>
+                    <span className="text-[10px] text-sky-700 font-semibold normal-case bg-sky-50 px-2 py-0.5 rounded border border-sky-100">
+                      Required for login
+                    </span>
                   </label>
                   <div className="relative">
                     <input
                       type="tel"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
+                      placeholder="e.g. 9876543210"
                       required
-                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 text-sm outline-hidden"
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 text-sm outline-hidden font-medium"
                     />
                     <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                   </div>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    You will need this mobile number to sign in to your Patient Portal.
+                  </p>
                 </div>
 
                 <div>

@@ -45,11 +45,25 @@ export interface UserProfile {
   createdAt?: unknown;
 }
 
+// Helper to compare phone numbers flexibly (handles +91, 0, spaces, dashes)
+export const isMatchingPhone = (storedPhone?: string, inputPhone?: string): boolean => {
+  if (!storedPhone || !inputPhone) return false;
+  const digitsStored = storedPhone.replace(/\D/g, '');
+  const digitsInput = inputPhone.replace(/\D/g, '');
+  if (!digitsStored || !digitsInput) return false;
+  if (digitsStored === digitsInput) return true;
+  // If either has 10 digits or more, compare the last 10 digits (standard Indian mobile format)
+  if (digitsStored.length >= 10 && digitsInput.length >= 10) {
+    return digitsStored.slice(-10) === digitsInput.slice(-10);
+  }
+  return digitsStored.endsWith(digitsInput) || digitsInput.endsWith(digitsStored);
+};
+
 interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string, phone?: string) => Promise<void>;
   signInDoctor: (username: string, email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, profileData: Partial<UserProfile>) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -178,15 +192,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  // Standard user/patient sign in with guaranteed fallback to registered patient accounts
-  const signIn = async (email: string, password: string) => {
+  // Standard user/patient sign in with mobile number verification & guaranteed fallback to registered patient accounts
+  const signIn = async (email: string, password: string, phoneInput?: string) => {
     localStorage.removeItem(DOCTOR_SESSION_STORAGE_KEY);
     const cleanEmail = email.trim().toLowerCase();
+    const cleanPhone = phoneInput ? phoneInput.trim() : '';
 
     // Strategy 1: Standard Firebase Auth sign-in
     try {
       const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
-      await syncUserProfile(cred.user);
+      
+      // Verify mobile number if provided
+      if (cleanPhone) {
+        let storedPhone = '';
+        const userRef = doc(db, 'users', cred.user.uid);
+        const snap = await getDoc(userRef);
+        if (snap.exists()) {
+          storedPhone = (snap.data() as UserProfile).phone || '';
+        }
+        if (!storedPhone) {
+          const regRef = doc(db, 'registered_patients', cred.user.uid);
+          const regSnap = await getDoc(regRef);
+          if (regSnap.exists()) {
+            storedPhone = regSnap.data().phone || '';
+          }
+        }
+
+        if (storedPhone && !isMatchingPhone(storedPhone, cleanPhone)) {
+          await signOut(auth);
+          throw new Error('Mobile number verification failed. The entered mobile number does not match the registered mobile number for this account.');
+        }
+      }
+
+      await syncUserProfile(cred.user, cleanPhone ? { phone: cleanPhone } : undefined);
       
       const userRef = doc(db, 'users', cred.user.uid);
       const snap = await getDoc(userRef);
@@ -197,6 +235,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       return;
     } catch (firebaseErr: unknown) {
+      if (firebaseErr instanceof Error && firebaseErr.message.includes('Mobile number verification failed')) {
+        throw firebaseErr;
+      }
       console.warn('Firebase Auth standard login threw, checking registered patient records:', firebaseErr);
     }
 
@@ -215,12 +256,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Incorrect password. Please verify your password and try again.');
         }
 
+        // Verify mobile number
+        if (cleanPhone && patData.phone && !isMatchingPhone(patData.phone, cleanPhone)) {
+          throw new Error('Mobile number verification failed. The entered mobile number does not match the mobile number provided during registration.');
+        }
+
         const patientProfile: UserProfile = {
           uid: patData.uid || patDoc.id,
           email: patData.email || cleanEmail,
           displayName: patData.fullName || 'Patient',
           role: 'patient',
-          phone: patData.phone || '',
+          phone: patData.phone || cleanPhone || '',
           dob: patData.dob || '',
           gender: patData.gender || 'male',
         };
@@ -250,12 +296,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Incorrect password. Please verify your password and try again.');
         }
 
+        // Verify mobile number
+        if (cleanPhone && uData.phone && !isMatchingPhone(uData.phone, cleanPhone)) {
+          throw new Error('Mobile number verification failed. The entered mobile number does not match the mobile number provided during registration.');
+        }
+
         const patientProfile: UserProfile = {
           uid: uData.uid || uDoc.id,
           email: uData.email || cleanEmail,
           displayName: uData.displayName || 'Patient',
           role: 'patient',
-          phone: uData.phone || '',
+          phone: uData.phone || cleanPhone || '',
           dob: uData.dob || '',
           gender: uData.gender || 'male',
         };
@@ -272,7 +323,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
     } catch (firestoreErr) {
-      if (firestoreErr instanceof Error && firestoreErr.message.includes('Incorrect password')) {
+      if (firestoreErr instanceof Error && (firestoreErr.message.includes('Incorrect password') || firestoreErr.message.includes('Mobile number verification failed'))) {
         throw firestoreErr;
       }
       console.warn('Firestore fallback lookup warning:', firestoreErr);
@@ -289,6 +340,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             throw new Error('Incorrect password. Please verify your password and try again.');
           }
 
+          // Verify mobile number
+          if (cleanPhone && found.phone && !isMatchingPhone(found.phone, cleanPhone)) {
+            throw new Error('Mobile number verification failed. The entered mobile number does not match the mobile number provided during registration.');
+          }
+
           const patientUser: User = {
             uid: found.uid,
             email: found.email,
@@ -302,7 +358,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
     } catch (cacheErr) {
-      if (cacheErr instanceof Error && cacheErr.message.includes('Incorrect password')) {
+      if (cacheErr instanceof Error && (cacheErr.message.includes('Incorrect password') || cacheErr.message.includes('Mobile number verification failed'))) {
         throw cacheErr;
       }
       console.warn('Local cache check warning:', cacheErr);
@@ -431,7 +487,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: cleanEmail,
         displayName: cleanName,
         role: 'patient',
-        phone: profileData.phone || '+91 9579674964',
+        phone: profileData.phone || '',
         dob: profileData.dob || '',
         gender: profileData.gender || 'male',
         password: password, // Store for login re-verification
@@ -480,7 +536,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           uid: authenticatedUser.uid,
           fullName: cleanName,
           email: cleanEmail,
-          phone: profileData.phone || '+91 9579674964',
+          phone: profileData.phone || '',
           dob: profileData.dob || 'Not specified',
           gender: profileData.gender || 'male',
           password: password, // Store for credential re-verification on login

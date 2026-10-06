@@ -93,7 +93,15 @@ The production server will listen on `http://localhost:3000`.
 
 ---
 
-## 🔐 Authorized Doctor Portal Credentials
+## 🔐 Portal Authentication & Credentials
+
+### Patient Portal Login Requirements:
+To log in to the Patient Portal, patients must provide all 3 credentials:
+* **Registered Email Address**: e.g., `patient@example.com`
+* **Registered Mobile Number**: e.g., `9876543210` (the exact phone number provided during account registration)
+* **Account Password**: set during patient registration
+
+### Authorized Doctor Portal Credentials:
 To access the Doctor & OPD Administration Portal:
 * **Doctor Username**: `amitkote4909`
 * **Doctor Email**: `koteamit651@gmail.com`
